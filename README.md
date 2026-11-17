@@ -32,15 +32,23 @@ LogLens is a Java-based, menu-driven console application that analyzes server lo
 
 ```text
 ProjectCP093/
+│
+├── data/
+│   └── logs.csv
+│
+├── reports/
+│   └── LogLens_Report_XXXXXXXX_XXXXXX.txt
+│
 ├── src/
 │   ├── Main.java
 │   ├── LogEntry.java
 │   ├── LogReader.java
-│   └── LogAnalyzer.java
-├── data/
-│   └── logs.csv
-├── reports/
-└── README.md
+│   ├── LogAnalyzer.java
+│   └── ReportWriter.java
+│
+├── README.md
+├── TEST_CASES.md
+└── .gitignore
 ```
 
 ## 6. How to Run

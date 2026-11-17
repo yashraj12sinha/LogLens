@@ -9,6 +9,9 @@ import java.util.Map;
 
 public class LogAnalyzer {
 
+    private static final DateTimeFormatter TIME_FORMAT =
+            DateTimeFormatter.ofPattern("HH:mm:ss");
+
     // 1. Count requests by HTTP status code
     public static void countStatusCodes(List<LogEntry> logs) {
         Map<Integer, Integer> statusCounts = new HashMap<>();
@@ -86,9 +89,7 @@ public class LogAnalyzer {
         Map<Integer, Integer> hourlyErrors = new HashMap<>();
 
         for (LogEntry log : logs) {
-            int status = log.getStatusCode();
-
-            if (status >= 400) {
+            if (log.getStatusCode() >= 400) {
                 int hour = Integer.parseInt(
                     log.getTime().substring(0, 2)
                 );
@@ -156,44 +157,108 @@ public class LogAnalyzer {
             );
     }
 
-    // 5. Detect IP addresses with at least five failed login attempts
+    // 5. Detect five failed logins within two minutes
     public static void detectSuspiciousIPs(List<LogEntry> logs) {
-        Map<String, Integer> failedLogins = new HashMap<>();
+
+        final int THRESHOLD = 5;
+        final int WINDOW_SECONDS = 120;
+
+        Map<String, List<LocalTime>> failedLogins =
+                new HashMap<>();
 
         for (LogEntry log : logs) {
-            if (log.getEndpoint().equals("/api/login")
+
+            if ("/api/login".equals(log.getEndpoint())
                     && log.getStatusCode() == 401) {
 
                 String ip = log.getIpAddress();
 
-                failedLogins.put(
-                    ip,
-                    failedLogins.getOrDefault(ip, 0) + 1
-                );
+                try {
+                    LocalTime time =
+                            LocalTime.parse(log.getTime(), TIME_FORMAT);
+
+                    failedLogins
+                        .computeIfAbsent(
+                            ip, key -> new ArrayList<>()
+                        )
+                        .add(time);
+
+                } catch (DateTimeParseException e) {
+                    System.out.println(
+                        "Skipping invalid time for IP: " + ip
+                    );
+                }
             }
         }
 
-        System.out.println("\n===== SUSPICIOUS IP ADDRESSES =====");
+        System.out.println(
+            "\n===== SECURITY MONITORING ALERTS ====="
+        );
 
         boolean found = false;
 
-        for (Map.Entry<String, Integer> entry
+        for (Map.Entry<String, List<LocalTime>> entry
                 : failedLogins.entrySet()) {
 
-            if (entry.getValue() >= 5) {
-                System.out.println(
-                    "IP: " + entry.getKey()
-                    + " | Failed logins: " + entry.getValue()
-                );
+            List<LocalTime> times = entry.getValue();
 
-                found = true;
+            times.sort(LocalTime::compareTo);
+
+            for (int i = 0; i < times.size(); i++) {
+
+                int attempts = 1;
+
+                for (int j = i + 1; j < times.size(); j++) {
+
+                    long seconds = Math.abs(
+                        java.time.Duration.between(
+                            times.get(i), times.get(j)
+                        ).getSeconds()
+                    );
+
+                    // Account for a window crossing midnight
+                    seconds = Math.min(seconds, 86400 - seconds);
+
+                    if (seconds <= WINDOW_SECONDS) {
+                        attempts++;
+                    } else {
+                        break;
+                    }
+                }
+
+                if (attempts >= THRESHOLD) {
+
+                    System.out.println(
+                        "ALERT: Potential brute-force activity"
+                    );
+
+                    System.out.println(
+                        "IP Address: " + entry.getKey()
+                    );
+
+                    System.out.println(
+                        "Failed Attempts: " + attempts
+                    );
+
+                    System.out.println(
+                        "Time Window: 2 minutes"
+                    );
+
+                    System.out.println(
+                        "Severity: HIGH"
+                    );
+
+                    System.out.println("-----------------------------");
+
+                    found = true;
+                    break;
+                }
             }
         }
 
         if (!found) {
             System.out.println(
-                "No IP addresses reached the threshold "
-                + "of 5 failed logins."
+                "No suspicious login activity detected."
             );
         }
     }
@@ -204,29 +269,28 @@ public class LogAnalyzer {
             String startTime,
             String endTime) {
 
-        DateTimeFormatter formatter =
-            DateTimeFormatter.ofPattern("HH:mm:ss");
-
         try {
-            LocalTime start = LocalTime.parse(startTime, formatter);
-            LocalTime end = LocalTime.parse(endTime, formatter);
+            LocalTime start =
+                    LocalTime.parse(startTime, TIME_FORMAT);
+
+            LocalTime end =
+                    LocalTime.parse(endTime, TIME_FORMAT);
 
             List<LogEntry> filteredLogs = new ArrayList<>();
 
             for (LogEntry log : logs) {
+
                 LocalTime logTime =
-                    LocalTime.parse(log.getTime(), formatter);
+                        LocalTime.parse(log.getTime(), TIME_FORMAT);
 
                 boolean matches;
 
                 if (!end.isBefore(start)) {
-                    // Normal range, such as 09:00:00 to 17:00:00
                     matches = !logTime.isBefore(start)
-                        && !logTime.isAfter(end);
+                            && !logTime.isAfter(end);
                 } else {
-                    // Range crossing midnight
                     matches = !logTime.isBefore(start)
-                        || !logTime.isAfter(end);
+                            || !logTime.isAfter(end);
                 }
 
                 if (matches) {
@@ -242,12 +306,54 @@ public class LogAnalyzer {
             return filteredLogs;
 
         } catch (DateTimeParseException e) {
+
             System.out.println(
-                "Invalid time format. Use HH:mm:ss, "
-                + "for example 09:30:00."
+                "Invalid time format. Use HH:mm:ss."
             );
 
             return new ArrayList<>();
         }
+    }
+
+    // 7. Calculate HTTP error rate
+    public static double calculateErrorRate(List<LogEntry> logs) {
+
+        if (logs == null || logs.isEmpty()) {
+            return 0.0;
+        }
+
+        long errorCount = logs.stream()
+                .filter(log -> log.getStatusCode() >= 400)
+                .count();
+
+        return (errorCount * 100.0) / logs.size();
+    }
+
+    // 8. Calculate average response time
+    public static double calculateAverageResponseTime(
+            List<LogEntry> logs) {
+
+        if (logs == null || logs.isEmpty()) {
+            return 0.0;
+        }
+
+        return logs.stream()
+                .mapToDouble(LogEntry::getResponseTime)
+                .average()
+                .orElse(0.0);
+    }
+
+    // 9. Calculate maximum response time
+    public static double calculateMaxResponseTime(
+            List<LogEntry> logs) {
+
+        if (logs == null || logs.isEmpty()) {
+            return 0.0;
+        }
+
+        return logs.stream()
+                .mapToDouble(LogEntry::getResponseTime)
+                .max()
+                .orElse(0.0);
     }
 }

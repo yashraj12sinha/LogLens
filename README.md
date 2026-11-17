@@ -49,8 +49,7 @@ Open the terminal in the project root directory.
 
 Compile the Java files:
 
-```bash
-javac src/Main.java src/LogEntry.java src/LogReader.java src/LogAnalyzer.java
+```bashjavac src\Main.java src\LogEntry.java src\LogReader.java src\LogAnalyzer.java src\ReportWriter.java
 ```
 
 Run the application:

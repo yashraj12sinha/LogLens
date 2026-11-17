@@ -14,6 +14,7 @@ public class LogAnalyzer {
 
     // 1. Count requests by HTTP status code
     public static void countStatusCodes(List<LogEntry> logs) {
+
         Map<Integer, Integer> statusCounts = new HashMap<>();
 
         for (LogEntry log : logs) {
@@ -39,14 +40,20 @@ public class LogAnalyzer {
 
     // 2. Display the top five IP addresses and endpoints
     public static void showTopFive(List<LogEntry> logs) {
+
         Map<String, Integer> ipCounts = new HashMap<>();
         Map<String, Integer> endpointCounts = new HashMap<>();
 
         for (LogEntry log : logs) {
+
             String ip = log.getIpAddress();
             String endpoint = log.getEndpoint();
 
-            ipCounts.put(ip, ipCounts.getOrDefault(ip, 0) + 1);
+            ipCounts.put(
+                ip,
+                ipCounts.getOrDefault(ip, 0) + 1
+            );
+
             endpointCounts.put(
                 endpoint,
                 endpointCounts.getOrDefault(endpoint, 0) + 1
@@ -86,10 +93,13 @@ public class LogAnalyzer {
 
     // 3. Count HTTP errors for each hour
     public static void showHourlyErrors(List<LogEntry> logs) {
+
         Map<Integer, Integer> hourlyErrors = new HashMap<>();
 
         for (LogEntry log : logs) {
+
             if (log.getStatusCode() >= 400) {
+
                 int hour = Integer.parseInt(
                     log.getTime().substring(0, 2)
                 );
@@ -104,6 +114,7 @@ public class LogAnalyzer {
         System.out.println("\n===== ERRORS PER HOUR =====");
 
         for (int hour = 0; hour < 24; hour++) {
+
             System.out.printf(
                 "%02d:00 - %d errors%n",
                 hour,
@@ -114,10 +125,12 @@ public class LogAnalyzer {
 
     // 4. Find the five endpoints with the highest average response time
     public static void showSlowestEndpoints(List<LogEntry> logs) {
+
         Map<String, Double> totalResponseTimes = new HashMap<>();
         Map<String, Integer> endpointCounts = new HashMap<>();
 
         for (LogEntry log : logs) {
+
             String endpoint = log.getEndpoint();
 
             totalResponseTimes.put(
@@ -157,109 +170,154 @@ public class LogAnalyzer {
             );
     }
 
-    // 5. Detect five failed logins within two minutes
-    public static void detectSuspiciousIPs(List<LogEntry> logs) {
+    // 5A. Generate structured security alert objects
+    public static List<SecurityAlert> getSecurityAlerts(
+            List<LogEntry> logs) {
 
         final int THRESHOLD = 5;
         final int WINDOW_SECONDS = 120;
 
-        Map<String, List<LocalTime>> failedLogins =
+        List<SecurityAlert> alerts = new ArrayList<>();
+
+        Map<String, List<Integer>> failedLogins =
                 new HashMap<>();
 
+        if (logs == null || logs.isEmpty()) {
+            return alerts;
+        }
+
+        // Collect failed login timestamps by IP address
         for (LogEntry log : logs) {
 
             if ("/api/login".equals(log.getEndpoint())
                     && log.getStatusCode() == 401) {
 
-                String ip = log.getIpAddress();
-
                 try {
-                    LocalTime time =
-                            LocalTime.parse(log.getTime(), TIME_FORMAT);
 
-                    failedLogins
-                        .computeIfAbsent(
-                            ip, key -> new ArrayList<>()
-                        )
-                        .add(time);
+                    LocalTime time = LocalTime.parse(
+                        log.getTime(),
+                        TIME_FORMAT
+                    );
+
+                    int seconds = time.toSecondOfDay();
+
+                    failedLogins.computeIfAbsent(
+                        log.getIpAddress(),
+                        key -> new ArrayList<>()
+                    ).add(seconds);
 
                 } catch (DateTimeParseException e) {
+
                     System.out.println(
-                        "Skipping invalid time for IP: " + ip
+                        "Skipping invalid login timestamp."
                     );
                 }
             }
         }
 
-        System.out.println(
-            "\n===== SECURITY MONITORING ALERTS ====="
-        );
-
-        boolean found = false;
-
-        for (Map.Entry<String, List<LocalTime>> entry
+        // Analyse failed login attempts for each IP
+        for (Map.Entry<String, List<Integer>> entry
                 : failedLogins.entrySet()) {
 
-            List<LocalTime> times = entry.getValue();
+            List<Integer> seconds = entry.getValue();
 
-            times.sort(LocalTime::compareTo);
+            seconds.sort(Integer::compareTo);
 
-            for (int i = 0; i < times.size(); i++) {
+            // Duplicate timestamps with an additional day
+            List<Integer> extended = new ArrayList<>(seconds);
 
-                int attempts = 1;
+            for (int second : seconds) {
+                extended.add(second + 86400);
+            }
 
-                for (int j = i + 1; j < times.size(); j++) {
+            // Check every possible two-minute window
+            for (int i = 0; i < seconds.size(); i++) {
 
-                    long seconds = Math.abs(
-                        java.time.Duration.between(
-                            times.get(i), times.get(j)
-                        ).getSeconds()
-                    );
+                int attempts = 0;
 
-                    // Account for a window crossing midnight
-                    seconds = Math.min(seconds, 86400 - seconds);
+                for (int j = i; j < extended.size(); j++) {
 
-                    if (seconds <= WINDOW_SECONDS) {
-                        attempts++;
-                    } else {
+                    int difference =
+                        extended.get(j) - extended.get(i);
+
+                    if (difference > WINDOW_SECONDS) {
                         break;
                     }
+
+                    attempts++;
                 }
 
                 if (attempts >= THRESHOLD) {
 
-                    System.out.println(
-                        "ALERT: Potential brute-force activity"
+                    LocalTime detectedAt =
+                        LocalTime.ofSecondOfDay(seconds.get(i));
+
+                    SecurityAlert alert = new SecurityAlert(
+                        entry.getKey(),
+                        "Potential Brute-Force Attack",
+                        attempts,
+                        "HIGH",
+                        "Five or more failed login attempts "
+                        + "detected within two minutes.",
+                        detectedAt
                     );
 
-                    System.out.println(
-                        "IP Address: " + entry.getKey()
-                    );
+                    alerts.add(alert);
 
-                    System.out.println(
-                        "Failed Attempts: " + attempts
-                    );
-
-                    System.out.println(
-                        "Time Window: 2 minutes"
-                    );
-
-                    System.out.println(
-                        "Severity: HIGH"
-                    );
-
-                    System.out.println("-----------------------------");
-
-                    found = true;
+                    // One alert per IP address
                     break;
                 }
             }
         }
 
-        if (!found) {
+        return alerts;
+    }
+
+    // 5B. Display security alerts in the console
+    public static void detectSuspiciousIPs(List<LogEntry> logs) {
+
+        List<SecurityAlert> alerts = getSecurityAlerts(logs);
+
+        System.out.println(
+            "\n===== SECURITY MONITORING ALERTS ====="
+        );
+
+        if (alerts.isEmpty()) {
+
             System.out.println(
                 "No suspicious login activity detected."
             );
+
+            return;
+        }
+
+        for (SecurityAlert alert : alerts) {
+
+            System.out.println(
+                "ALERT: " + alert.getAlertType()
+            );
+
+            System.out.println(
+                "IP Address: " + alert.getIpAddress()
+            );
+
+            System.out.println(
+                "Failed Attempts: " + alert.getFailedAttempts()
+            );
+
+            System.out.println(
+                "Severity: " + alert.getSeverity()
+            );
+
+            System.out.println(
+                "Description: " + alert.getDescription()
+            );
+
+            System.out.println(
+                "Detected At: " + alert.getDetectedAt()
+            );
+
+            System.out.println("-----------------------------");
         }
     }
 
@@ -270,25 +328,29 @@ public class LogAnalyzer {
             String endTime) {
 
         try {
+
             LocalTime start =
-                    LocalTime.parse(startTime, TIME_FORMAT);
+                LocalTime.parse(startTime, TIME_FORMAT);
 
             LocalTime end =
-                    LocalTime.parse(endTime, TIME_FORMAT);
+                LocalTime.parse(endTime, TIME_FORMAT);
 
             List<LogEntry> filteredLogs = new ArrayList<>();
 
             for (LogEntry log : logs) {
 
                 LocalTime logTime =
-                        LocalTime.parse(log.getTime(), TIME_FORMAT);
+                    LocalTime.parse(log.getTime(), TIME_FORMAT);
 
                 boolean matches;
 
                 if (!end.isBefore(start)) {
+
                     matches = !logTime.isBefore(start)
                             && !logTime.isAfter(end);
+
                 } else {
+
                     matches = !logTime.isBefore(start)
                             || !logTime.isAfter(end);
                 }
@@ -323,8 +385,8 @@ public class LogAnalyzer {
         }
 
         long errorCount = logs.stream()
-                .filter(log -> log.getStatusCode() >= 400)
-                .count();
+            .filter(log -> log.getStatusCode() >= 400)
+            .count();
 
         return (errorCount * 100.0) / logs.size();
     }
@@ -338,9 +400,9 @@ public class LogAnalyzer {
         }
 
         return logs.stream()
-                .mapToDouble(LogEntry::getResponseTime)
-                .average()
-                .orElse(0.0);
+            .mapToDouble(LogEntry::getResponseTime)
+            .average()
+            .orElse(0.0);
     }
 
     // 9. Calculate maximum response time
@@ -352,8 +414,8 @@ public class LogAnalyzer {
         }
 
         return logs.stream()
-                .mapToDouble(LogEntry::getResponseTime)
-                .max()
-                .orElse(0.0);
+            .mapToDouble(LogEntry::getResponseTime)
+            .max()
+            .orElse(0.0);
     }
 }

@@ -37,14 +37,15 @@ ProjectCP093/
 │   └── logs.csv
 │
 ├── reports/
-│   └── LogLens_Report_XXXXXXXX_XXXXXX.txt
+│   └── generated reports
 │
 ├── src/
 │   ├── Main.java
 │   ├── LogEntry.java
 │   ├── LogReader.java
 │   ├── LogAnalyzer.java
-│   └── ReportWriter.java
+│   ├── ReportWriter.java
+│   └── SecurityAlert.java
 │
 ├── README.md
 ├── TEST_CASES.md

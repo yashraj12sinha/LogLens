@@ -1,11 +1,20 @@
+<<<<<<< HEAD
 
 # Compiled Java files
 *.class
 out/
+=======
+# Compiled Java files
+*.class
+>>>>>>> 9734903710dd31759b7a8a3d1328dce23da76c81
 
 # VS Code settings
 .vscode/
 
 # Operating system files
 .DS_Store
+<<<<<<< HEAD
 Thumbs.db
+=======
+Thumbs.db 
+>>>>>>> 9734903710dd31759b7a8a3d1328dce23da76c81
